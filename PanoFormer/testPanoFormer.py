@@ -23,8 +23,8 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 if __name__ == '__main__':
-    panoformer = PanoFormerDepthEstimator(weights_path="PanoFormer/PanoFormer/tmp_s2d3d/panodepth/models/weights")
-    # panoformer = PanoFormerDepthEstimator(weights_path="PanoFormer/PanoFormer/tmp/panodepth/models/weights_pretrain")
+    # panoformer = PanoFormerDepthEstimator(weights_path="PanoFormer/PanoFormer/tmp_s2d3d/panodepth/models/weights")
+    panoformer = PanoFormerDepthEstimator(weights_path="PanoFormer/PanoFormer/tmp/panodepth/models/weights_pretrain")
 
     # panoformer = PanoFormerDepthEstimator(weights_path="C:\\Users\\admin\OneDrive - VNU-HCMUS\\Documents")
 
@@ -33,5 +33,9 @@ if __name__ == '__main__':
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     depth_map = panoformer.predict_depth(image)
-    output_path = f"G:\\My Drive\\public_data\\{fol}\\0_colors_depth2.png"
-    panoformer.save_depth_map(depth_map, output_path)
+    pcd = panoformer.to_point_cloud(
+        depth_map=depth_map,
+        rgb_image=image,
+        filter_outlier=False,
+    )
+    panoformer.visualize_point_cloud(pcd)
