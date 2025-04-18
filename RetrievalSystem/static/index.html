@@ -1,0 +1,746 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qdrant Vector Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f7fa;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            background-color: #3498db;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        main {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .visualization-container {
+            flex: 1;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .visualization-container h2 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .visualization-container p {
+            margin-bottom: 15px;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        /* Style for text box container */
+        #text-box-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            padding: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        /* Style for individual text query boxes */
+        .text-query-box {
+            background-color: #f0f8ff;
+            border: 1px solid #b0c4de;
+            border-radius: 6px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .text-query-box:hover {
+            background-color: #e6f2ff;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+        }
+
+        .text-query-box.selected {
+            background-color: #e1f5fe;
+            border-color: #4fc3f7;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .text-query-box p {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #333;
+            font-weight: bold;
+            overflow-wrap: break-word;
+            flex-grow: 1;
+        }
+
+        .text-query-box small {
+            font-size: 11px;
+            color: #777;
+            margin-top: auto;
+        }
+
+        /* Search input styling */
+        .search-container {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-container label {
+            margin-right: 10px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .search-container input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .search-container input:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .query-container {
+            flex: 1;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .query-container h2 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .query-text {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+
+        .query-options {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .query-type {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: 20px;
+        }
+
+        .query-type label {
+            margin-right: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .query-type select {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: white;
+            color: #333;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .query-type select:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .weight-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .weight-controls label {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .weight-controls input {
+            width: 70px;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            text-align: center;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .weight-controls input:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .apply-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            margin-left: auto;
+        }
+
+        .apply-button:hover {
+            background-color: #2980b9;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .apply-button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        .results-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-height: 800px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .result-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            margin-bottom: 15px;
+            transition: all 0.2s ease;
+        }
+
+        .result-item:hover {
+            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+        }
+
+        .result-item h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 18px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+
+        .scores {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .scores p {
+            background-color: #ecf0f1;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .scores p strong {
+            color: #2980b9;
+        }
+
+        .image-container {
+            max-width: 300px;
+            margin: 0 auto;
+        }
+
+        .image-container h4 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: block;
+            margin: 0 auto;
+        }
+
+        .image-container p {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #7f8c8d;
+            word-break: break-all;
+            text-align: center;
+        }
+
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-size: 24px;
+            color: #3498db;
+        }
+
+        .loading div {
+            background-color: white;
+            padding: 20px 40px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 1200px) {
+            main {
+                flex-direction: column;
+            }
+
+            .visualization-container,
+            .query-container {
+                width: 100%;
+            }
+
+            .query-options {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .apply-button {
+                margin-left: 0;
+                width: 100%;
+                margin-top: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Qdrant Vector Database Visualization</h1>
+        </header>
+
+        <main>
+            <div class="visualization-container">
+                <h2>Text Collection Points</h2>
+                <p>Click on a point to query related images and shapes</p>
+                <svg id="visualization"></svg>
+                <div id="error-message" class="error" style="display: none;"></div>
+            </div>
+
+            <div id="query-container" class="query-container">
+                <h2>Query Results</h2>
+                <div id="query-text" class="query-text">
+                    <strong>Query Text:</strong> <span id="selected-query"></span>
+                </div>
+
+                <div class="query-options">
+                    <div class="query-type">
+                        <label for="query-type-select">Phương thức truy vấn:</label>
+                        <select id="query-type-select">
+                            <option value="combined">Kết hợp (2D+3D)</option>
+                            <option value="image">2D (Image)</option>
+                            <option value="shape">3D (Shape)</option>
+                        </select>
+                    </div>
+
+                    <div id="weight-controls" class="weight-controls">
+                        <label for="image-weight">Trọng số 2D:</label>
+                        <input type="number" id="image-weight" min="0" max="1" step="0.1" value="0.5">
+
+                        <label for="shape-weight">Trọng số 3D:</label>
+                        <input type="number" id="shape-weight" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+
+                    <button id="apply-query" class="apply-button">Áp dụng</button>
+                </div>
+
+                <div id="results-container" class="results-container">
+                    <!-- Results will be added here dynamically -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+        <div>Loading...</div>
+    </div>
+
+    <script>
+        // API URL - change this to match your Flask backend
+        const API_URL = 'http://localhost:5000';
+
+        // DOM Elements
+        const svgEl = document.getElementById('visualization');
+        const queryContainer = document.getElementById('query-container');
+        const selectedQueryEl = document.getElementById('selected-query');
+        const queryTypeSelect = document.getElementById('query-type-select');
+        const imageWeightInput = document.getElementById('image-weight');
+        const shapeWeightInput = document.getElementById('shape-weight');
+        const applyQueryBtn = document.getElementById('apply-query');
+        const weightControls = document.getElementById('weight-controls');
+        const resultsContainer = document.getElementById('results-container');
+        const loadingEl = document.getElementById('loading');
+        const errorMessageEl = document.getElementById('error-message');
+
+        // Current selected vector ID
+        let currentVectorId = null;
+
+        // Show/hide weight controls based on query type
+        queryTypeSelect.addEventListener('change', function() {
+            const queryType = this.value;
+            weightControls.style.display = queryType === 'combined' ? 'flex' : 'none';
+        });
+
+        // Apply query button click handler
+        applyQueryBtn.addEventListener('click', function() {
+            if (currentVectorId) {
+                queryCollections(currentVectorId);
+            }
+        });
+
+        // Show loading indicator
+        function showLoading() {
+            loadingEl.style.display = 'flex';
+        }
+
+        // Hide loading indicator
+        function hideLoading() {
+            loadingEl.style.display = 'none';
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMessageEl.textContent = message;
+            errorMessageEl.style.display = 'block';
+        }
+
+        // Hide error message
+        function hideError() {
+            errorMessageEl.style.display = 'none';
+        }
+
+        // Fetch text points from API
+        async function fetchTextPoints() {
+            try {
+                showLoading();
+                hideError();
+
+                const response = await axios.get(`${API_URL}/get_text_points`);
+
+                if (response.data.status === 'success') {
+                    visualizePoints(response.data.points);
+                } else {
+                    showError('Failed to fetch text points');
+                }
+            } catch (err) {
+                showError(`Error: ${err.message}`);
+                console.error('Error fetching text points:', err);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Query collections based on selected vector
+        async function queryCollections(vectorId) {
+            try {
+                showLoading();
+                hideError();
+
+                // Save current vector ID
+                currentVectorId = vectorId;
+
+                // Get query parameters
+                const queryType = queryTypeSelect.value;
+                const imageWeight = parseFloat(imageWeightInput.value);
+                const shapeWeight = parseFloat(shapeWeightInput.value);
+
+                const response = await axios.post(`${API_URL}/query_collections`, {
+                    vector_id: vectorId,
+                    query_type: queryType,
+                    k: 100, // Number of unique UUIDs to return
+                    image_weight: imageWeight,
+                    shape_weight: shapeWeight
+                });
+
+                if (response.data.status === 'success') {
+                    // Display the query container
+                    queryContainer.style.display = 'block';
+
+                    // Set the query text
+                    selectedQueryEl.textContent = response.data.query_text;
+
+                    // Clear previous results
+                    resultsContainer.innerHTML = '';
+
+                    // Display results
+                    if (response.data.results.length > 0) {
+                        response.data.results.forEach((result, index) => {
+                            const resultItem = document.createElement('div');
+                            resultItem.className = 'result-item';
+
+                            // Prepare score display based on query type
+                            let scoreHtml = '';
+                            if (response.data.query_type === 'combined') {
+                                scoreHtml = `
+                                    <div class="scores">
+                                        <p>Combined Score: <strong>${result.combined_score ? result.combined_score.toFixed(4) : 'N/A'}</strong></p>
+                                        <p>Image Score: ${result.image_score ? result.image_score.toFixed(4) : 'N/A'}</p>
+                                        <p>Shape Score: ${result.shape_score ? result.shape_score.toFixed(4) : 'N/A'}</p>
+                                    </div>
+                                `;
+                            } else {
+                                scoreHtml = `
+                                    <div class="scores">
+                                        <p>Score: <strong>${result.score ? result.score.toFixed(4) : 'N/A'}</strong></p>
+                                    </div>
+                                `;
+                            }
+
+                            resultItem.innerHTML = `
+                                <h3>Result #${index + 1} - UUID: ${result.uuid}</h3>
+                                ${scoreHtml}
+                                <div class="image-container">
+                                    ${result.image_data ? `
+                                        <img src="data:image/jpeg;base64,${result.image_data}" alt="Image ${result.uuid}">
+                                        <p>Path: ${result.origin_path || result.image_path || 'N/A'}</p>
+                                    ` : '<p>No image available</p>'}
+                                </div>
+                            `;
+
+                            resultsContainer.appendChild(resultItem);
+                        });
+                    } else {
+                        resultsContainer.innerHTML = '<p>No results found</p>';
+                    }
+                } else {
+                    showError('Failed to query collections');
+                }
+            } catch (err) {
+                showError(`Error: ${err.message}`);
+                console.error('Error querying collections:', err);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Visualize text queries as boxes instead of points
+        function visualizePoints(points) {
+            // Remove SVG and replace with a div container for text boxes
+            d3.select(svgEl).remove();
+
+            // Create a div container for text boxes if it doesn't exist
+            let textBoxContainer = document.getElementById('text-box-container');
+            if (!textBoxContainer) {
+                textBoxContainer = document.createElement('div');
+                textBoxContainer.id = 'text-box-container';
+                textBoxContainer.style.cssText = `
+                    max-height: 600px;
+                    overflow-y: auto;
+                    padding: 10px;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                    gap: 15px;
+                `;
+                document.querySelector('.visualization-container').appendChild(textBoxContainer);
+            } else {
+                textBoxContainer.innerHTML = ''; // Clear existing content
+            }
+
+            // Sort points alphabetically by query for easier navigation
+            points.sort((a, b) => a.query.localeCompare(b.query));
+
+            // Create a text box for each point
+            points.forEach(point => {
+                const textBox = document.createElement('div');
+                textBox.className = 'text-query-box';
+                textBox.style.cssText = `
+                    background-color: #f0f8ff;
+                    border: 1px solid #b0c4de;
+                    border-radius: 6px;
+                    padding: 12px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                `;
+
+                // Add query text
+                const queryText = document.createElement('p');
+                queryText.style.cssText = `
+                    margin: 0 0 8px 0;
+                    font-size: 14px;
+                    color: #333;
+                    font-weight: bold;
+                    overflow-wrap: break-word;
+                    flex-grow: 1;
+                `;
+                queryText.textContent = point.query;
+                textBox.appendChild(queryText);
+
+                // Add ID as small text
+                const idText = document.createElement('small');
+                idText.style.cssText = `
+                    font-size: 11px;
+                    color: #777;
+                    margin-top: auto;
+                `;
+                idText.textContent = `ID: ${point.id}`;
+                textBox.appendChild(idText);
+
+                // Add hover effect
+                textBox.addEventListener('mouseover', () => {
+                    textBox.style.backgroundColor = '#e6f2ff';
+                    textBox.style.boxShadow = '0 3px 6px rgba(0,0,0,0.15)';
+                });
+
+                textBox.addEventListener('mouseout', () => {
+                    textBox.style.backgroundColor = '#f0f8ff';
+                    textBox.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                });
+
+                // Add click event
+                textBox.addEventListener('click', () => {
+                    // Highlight selected box
+                    document.querySelectorAll('.text-query-box').forEach(box => {
+                        box.style.backgroundColor = '#f0f8ff';
+                        box.style.borderColor = '#b0c4de';
+                    });
+                    textBox.style.backgroundColor = '#e1f5fe';
+                    textBox.style.borderColor = '#4fc3f7';
+
+                    // Query collections
+                    queryCollections(point.id);
+                });
+
+                textBoxContainer.appendChild(textBox);
+            });
+
+            // Add search functionality
+            const searchContainer = document.createElement('div');
+            searchContainer.style.cssText = `
+                margin-bottom: 15px;
+                display: flex;
+                align-items: center;
+            `;
+
+            const searchLabel = document.createElement('label');
+            searchLabel.textContent = 'Tìm kiếm: ';
+            searchLabel.style.marginRight = '10px';
+            searchLabel.htmlFor = 'search-query';
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.id = 'search-query';
+            searchInput.placeholder = 'Nhập từ khóa...';
+            searchInput.style.cssText = `
+                flex-grow: 1;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            `;
+
+            searchInput.addEventListener('input', () => {
+                const searchTerm = searchInput.value.toLowerCase();
+                const boxes = document.querySelectorAll('.text-query-box');
+
+                boxes.forEach(box => {
+                    const query = box.querySelector('p').textContent.toLowerCase();
+                    if (query.includes(searchTerm)) {
+                        box.style.display = 'flex';
+                    } else {
+                        box.style.display = 'none';
+                    }
+                });
+            });
+
+            searchContainer.appendChild(searchLabel);
+            searchContainer.appendChild(searchInput);
+
+            // Insert search fbefore the text box container
+            textBoxContainer.parentNode.insertBefore(searchContainer, textBoxContainer);
+        }
+
+        // Initialize: fetch text points when page loads
+        document.addEventListener('DOMContentLoaded', fetchTextPoints);
+    </script>
+</body>
+</html>
