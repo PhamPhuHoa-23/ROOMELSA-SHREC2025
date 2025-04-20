@@ -1,355 +1,253 @@
+import os
+import json
 import numpy as np
 import open3d as o3d
-from pytorch3d.io import load_objs_as_meshes
-from pytorch3d.ops import sample_points_from_meshes
+from simpleicp import PointCloud, SimpleICP
 import copy
 
-from dgl.function import copy_u
-from scipy.spatial import cKDTree
-
-
-def load_point_cloud(file_path, is_npy=False):
-    """
-    Tải đám mây điểm từ file
-    """
-    if is_npy:
-        data = np.load(file_path)
-        pcd = o3d.geometry.PointCloud()
-
-        # Lấy tọa độ xyz
-        points = data[:, :3]
-        pcd.points = o3d.utility.Vector3dVector(points)
-
-        # Nếu có màu sắc
-        if data.shape[1] >= 6:
-            # Giả sử màu sắc đã được chuẩn hóa trong khoảng [0, 1]
-            colors = data[:, 3:]
-            pcd.colors = o3d.utility.Vector3dVector(colors)
-    else:
-        # Sử dụng cho các định dạng khác như .ply, .pcd, .obj
-        pcd = o3d.io.read_point_cloud(file_path)
-        # mesh = load_objs_as_meshes(file_path)
-        # pcd = sample_points_from_meshes(mesh, num_samples=30000)
-
-    return pcd
-
 def normalize_point_cloud(pcd):
+    """
+    Normalize point cloud to be centered at origin and scaled to unit sphere
+    """
     points = np.asarray(pcd.points)
-
-    centroid = np.mean(pcd.points, axis=0)
+    centroid = np.mean(points, axis=0)
     centered_points = points - centroid
-
     max_dist = np.max(np.sqrt(np.sum(centered_points ** 2, axis=1)))
     normalized_points = centered_points / max_dist
 
     normalized_pcd = o3d.geometry.PointCloud()
     normalized_pcd.points = o3d.utility.Vector3dVector(normalized_points)
 
+    if pcd.has_colors():
+        normalized_pcd.colors = o3d.utility.Vector3dVector(np.asarray(pcd.colors))
+    if pcd.has_normals():
+        normalized_pcd.normals = o3d.utility.Vector3dVector(np.asarray(pcd.normals))
+
     return normalized_pcd, centroid, max_dist
 
-def chamfer_distance(src_points, tar_points):
-    src_tree = cKDTree(src_points)
-    tar_tree = cKDTree(tar_points)
-
-    src_to_tar_dist, _ = src_tree.query(tar_points)
-    tar_to_src_dist, _ = tar_tree.query(src_points)
-
-    chamfer_dist = np.mean(src_to_tar_dist) + np.mean(tar_to_src_dist)
-    return chamfer_dist
-
-def icp_with_normal_init(src_pcd, tar_pcd, max_iter=100, threshold=0.05):
-    src_points = np.asarray(src_pcd.points)
-    tar_points = np.asarray(tar_pcd.points)
-
-    src_centroid = np.mean(src_points, axis=0)
-    tar_centroid = np.mean(tar_points, axis=0)
-
-    src_centered = src_points - src_centroid
-    tar_centered = tar_points - tar_centroid
-
-    src_cov = np.cov(src_centered.T)
-    tar_cov = np.cov(tar_centered.T)
-
-    src_eigvals, src_eigvecs = np.linalg.eig(src_cov)
-    tar_eigvals, tar_eigvecs = np.linalg.eig(tar_cov)
-
-    src_idx = np.argsort(src_eigvals)[::-1]
-    tar_idx = np.argsort(tar_eigvals)[::-1]
-    src_eigvecs = src_eigvecs[:, src_idx]
-    tar_eigvecs = tar_eigvecs[:, tar_idx]
-
-    R_init = np.dot(tar_eigvecs, src_eigvecs.T)
-    if np.linalg.det(R_init) < 0:
-        src_eigvecs[:,2] = -src_eigvecs[:,2]
-        R_init = np.dot(tar_eigvecs, src_eigvecs.T)
-
-    src_pcd_init = copy.deepcopy(src_pcd)
-    init_transform = np.eye(4)
-    init_transform[:3, :3] = R_init
-    src_pcd_init.transform(init_transform)
-
-    if tar_pcd.has_normals() and src_pcd.has_normals():
-        # Sử dụng point-to-plane nếu có normal
-        estimation = o3d.pipelines.registration.TransformationEstimationPointToPlane()
+def load_point_cloud(file_path, is_npy=False, is_src=False):
+    """
+    Load point cloud from file
+    """
+    if is_npy:
+        data = np.load(file_path)
+        pcd = o3d.geometry.PointCloud()
+        points = data[:, :3]
+        if is_src: points[:, [1, 2]] = points[:, [2, 1]]
+        pcd.points = o3d.utility.Vector3dVector(points)
+        if data.shape[1] >= 6:
+            colors = data[:, 3:6]
+            pcd.colors = o3d.utility.Vector3dVector(colors)
     else:
-        # Sử dụng point-to-point nếu không có normal
-        estimation = o3d.pipelines.registration.TransformationEstimationPointToPoint()
-
-    # estimation = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=True)
-
-    icp_result = o3d.pipelines.registration.registration_icp(
-        src_pcd_init,
-        tar_pcd,
-        threshold,
-        np.eye(4),
-        # estimation,
-        # o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iter)
-    )
-
-    final_transform = np.dot(icp_result.transformation, init_transform)
-
-    src_pcd_transformed = copy.deepcopy(src_pcd)
-    src_pcd_transformed.transform(final_transform)
-
-    return src_pcd_transformed, final_transform, icp_result.fitness, icp_result.inlier_rmse
+        pcd = o3d.io.read_point_cloud(file_path)
+    return pcd
 
 
 def visualize_registration(source, target, transformed_source=None):
-
     source_temp = copy.deepcopy(source)
     target_temp = copy.deepcopy(target)
 
-    source_temp.paint_uniform_color([1, 0, 0])  # Đỏ
-    target_temp.paint_uniform_color([0, 1, 0])  # Xanh lá
+    source_temp.paint_uniform_color([1, 0, 0])  # Red
+    target_temp.paint_uniform_color([0, 1, 0])  # Green
 
     if transformed_source is None:
         o3d.visualization.draw_geometries([source_temp, target_temp])
     else:
         transformed_source_temp = copy.deepcopy(transformed_source)
-        transformed_source_temp.paint_uniform_color([0, 0, 1])  # Xanh dương
-        o3d.visualization.draw_geometries([target_temp, transformed_source_temp])
+        transformed_source_temp.paint_uniform_color([0, 0, 1])  # Blue
+        coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1)
+        o3d.visualization.draw_geometries([target_temp, transformed_source_temp, coordinate_frame])
 
-
-def evaluate_registration(source, target, transformed_source, threshold=0.05):
-
-    source_points = np.asarray(source.points)
-    target_points = np.asarray(target.points)
-    transformed_points = np.asarray(transformed_source.points)
-
-    cd_bf = chamfer_distance(source_points, target_points)
-
-    cd_af = chamfer_distance(transformed_points, target_points)
-
-    # evaluation = o3d.pipelines.registration.evaluate_registration(
-    #     transformed_source, target, threshold)
-
-    metrics = {
-        'chamfer_distance_before': cd_bf,
-        # 'chamfer_s2t_before': cd_s2t_before,
-        # 'chamfer_t2s_before': cd_t2s_before,
-        'chamfer_distance_after': cd_af,
-        # 'chamfer_s2t_after': cd_s2t_after,
-        # 'chamfer_t2s_after': cd_t2s_after,
-        # 'fitness': evaluation.fitness,  # Tỷ lệ điểm khớp trong ngưỡng
-        # 'inlier_rmse': evaluation.inlier_rmse,  # RMSE của các điểm khớp
-        # 'correspondence_set_size': len(evaluation.correspondence_set)  # Số lượng cặp điểm tương ứng
-    }
-
-    return metrics
-
-
-def custom_partial_icp(source, target, max_iter=100, threshold=0.05):
+def pca_alignment(source, target):
     """
-    ICP tùy chỉnh cho partial matching
-    - source: đám mây điểm đầy đủ (hoặc visible part của nó)
-    - target: đám mây điểm một phần (từ depth map)
+    Align source point cloud to target using PCA
     """
-    # Khởi tạo
-    result = copy.deepcopy(source)
-    transformation = np.identity(4)
     source_points = np.asarray(source.points)
     target_points = np.asarray(target.points)
 
-    # Tạo KD tree cho source (dùng để tìm điểm gần nhất)
-    source_kdtree = o3d.geometry.KDTreeFlann(source)
+    # Compute centroids
+    source_centroid = np.mean(source_points, axis=0)
+    target_centroid = np.mean(target_points, axis=0)
 
-    for iteration in range(max_iter):
-        # 1. Tìm các cặp điểm tương ứng (chỉ từ target đến source)
-        correspondences = []
-        for i, point in enumerate(target_points):
-            [_, idx, distance] = source_kdtree.search_knn_vector_3d(point, 1)
-            if distance[0] < threshold ** 2:  # Chỉ lấy các điểm trong ngưỡng
-                correspondences.append((i, idx[0]))
+    # Center both point clouds
+    source_centered = source_points - source_centroid
+    target_centered = target_points - target_centroid
 
-        if len(correspondences) < 3:  # Cần ít nhất 3 điểm để tính transformation
-            break
+    # Compute covariance matrices
+    source_cov = np.cov(source_centered.T)
+    target_cov = np.cov(target_centered.T)
 
-        # 2. Trích xuất các điểm tương ứng
-        p = np.zeros((len(correspondences), 3))  # Target points
-        q = np.zeros((len(correspondences), 3))  # Source points
+    # Compute eigenvectors and eigenvalues
+    source_eigvals, source_eigvecs = np.linalg.eigh(source_cov)
+    target_eigvals, target_eigvecs = np.linalg.eigh(target_cov)
 
-        for i, (target_idx, source_idx) in enumerate(correspondences):
-            p[i] = target_points[target_idx]
-            q[i] = source_points[source_idx]
+    # Sort eigenvectors by eigenvalues in descending order
+    source_idx = np.argsort(source_eigvals)[::-1]
+    target_idx = np.argsort(target_eigvals)[::-1]
 
-        # 3. Tính transformation để minimize khoảng cách
-        # (Sử dụng thuật toán SVD)
-        p_centroid = np.mean(p, axis=0)
-        q_centroid = np.mean(q, axis=0)
+    source_eigvecs = source_eigvecs[:, source_idx]
+    target_eigvecs = target_eigvecs[:, target_idx]
 
-        p_centered = p - p_centroid
-        q_centered = q - q_centroid
+    # Compute rotation matrix from source to target
+    rotation = np.dot(target_eigvecs, source_eigvecs.T)
 
-        # Tính ma trận hiệp phương sai
-        H = np.dot(p_centered.T, q_centered)
-        U, S, Vt = np.linalg.svd(H)
+    # Ensure it's a proper rotation matrix (det = 1)
+    # if np.linalg.det(rotation) < 0:
+    #     source_eigvecs[:, 2] = -source_eigvecs[:, 2]
+    #     rotation = np.dot(target_eigvecs, source_eigvecs.T)
 
-        # Tính ma trận xoay
-        R = np.dot(Vt.T, U.T)
+    # Create transformation matrix
+    transformation = np.eye(4)
+    transformation[:3, :3] = rotation
 
-        # Đảm bảo R là ma trận xoay đúng (det = 1)
-        if np.linalg.det(R) < 0:
-            Vt[-1, :] *= -1
-            R = np.dot(Vt.T, U.T)
+    # Add translation to move source centroid to target centroid after rotation
+    transformation[:3, 3] = target_centroid - np.dot(rotation, source_centroid)
 
-        # Tính vector dịch chuyển
-        t = q_centroid - np.dot(R, p_centroid)
+    # Apply transformation to source
+    aligned_source = copy.deepcopy(source)
+    aligned_source.transform(transformation)
 
-        # 4. Tạo ma trận transformation
-        current_transformation = np.identity(4)
-        current_transformation[:3, :3] = R
-        current_transformation[:3, 3] = t
-
-        # 5. Cập nhật transformation tích lũy
-        transformation = np.dot(current_transformation, transformation)
-
-        # 6. Kiểm tra hội tụ
-        error = np.mean(np.linalg.norm(np.dot(p, R.T) + t - q, axis=1))
-        if error < threshold / 10:  # Hội tụ khi sai số đủ nhỏ
-            break
-
-        # 7. Cập nhật source points cho vòng lặp tiếp theo
-        temp = np.ones((source_points.shape[0], 4))
-        temp[:, :3] = source_points
-        temp = np.dot(temp, current_transformation.T)
-        source_points = temp[:, :3]
-
-        # Cập nhật KD tree
-        updated_source = o3d.geometry.PointCloud()
-        updated_source.points = o3d.utility.Vector3dVector(source_points)
-        source_kdtree = o3d.geometry.KDTreeFlann(updated_source)
-
-    # Áp dụng transformation cuối cùng
-    result.transform(transformation)
-
-    # Tính fitness và inlier_rmse tương tự như hàm registration_icp
-    # để có thể so sánh kết quả
-    correspondences = []
-    for i, point in enumerate(target_points):
-        [_, idx, distance] = source_kdtree.search_knn_vector_3d(point, 1)
-        if distance[0] < threshold ** 2:
-            correspondences.append((i, idx[0]))
-
-    fitness = len(correspondences) / len(target_points)
-    squared_errors = []
-    for i, j in correspondences:
-        squared_errors.append(np.sum((target_points[i] - source_points[j]) ** 2))
-    inlier_rmse = np.sqrt(np.mean(squared_errors))
-
-    return result, transformation, fitness, inlier_rmse
+    return aligned_source, transformation
 
 
-def custom_robust_registration(source, target, threshold=0.05, max_iter=100):
+def chamfer_distance(source, target):
     """
-    Robust registration sử dụng TukeyLoss để giảm ảnh hưởng của outliers
+    Tính Chamfer Distance giữa hai điểm mây.
+
+    Parameters:
+    -----------
+    source : o3d.geometry.PointCloud
+        Điểm mây nguồn
+    target : o3d.geometry.PointCloud
+        Điểm mây đích
+
+    Returns:
+    --------
+    float
+        Giá trị Chamfer Distance giữa hai điểm mây
     """
-    # Khởi tạo
-    current_transformation = np.identity(4)
+    # Chuyển đổi điểm mây sang mảng numpy
+    source_points = np.asarray(source.points)
+    target_points = np.asarray(target.points)
 
-    # Tạo TukeyLoss với scale là threshold
-    loss = o3d.pipelines.registration.TukeyLoss(k=threshold)
+    # Xây dựng KDTree cho tập điểm đích để tìm kiếm nhanh
+    target_tree = o3d.geometry.KDTreeFlann(target)
 
-    for i in range(max_iter):
-        # Tạo một bản sao của source để áp dụng transformation hiện tại
-        source_transformed = copy.deepcopy(source)
-        source_transformed.transform(current_transformation)
+    # Tính tổng khoảng cách từ source đến target
+    source_to_target = 0.0
+    for point in source_points:
+        # Tìm điểm gần nhất trong target cho mỗi điểm trong source
+        _, idx, dist = target_tree.search_knn_vector_3d(point, 1)
+        source_to_target += np.sqrt(dist[0])
 
-        # Thực hiện một bước ICP với robust kernel
-        result_icp = o3d.pipelines.registration.registration_icp(
-            source_transformed, target, threshold, np.identity(4),
-            o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-            o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=1),
-            loss
-        )
+    # Xây dựng KDTree cho tập điểm nguồn
+    source_tree = o3d.geometry.KDTreeFlann(source)
 
-        # Cập nhật transformation
-        current_transformation = np.dot(result_icp.transformation, current_transformation)
+    # Tính tổng khoảng cách từ target đến source
+    target_to_source = 0.0
+    for point in target_points:
+        # Tìm điểm gần nhất trong source cho mỗi điểm trong target
+        _, idx, dist = source_tree.search_knn_vector_3d(point, 1)
+        target_to_source += np.sqrt(dist[0])
 
-        # Kiểm tra hội tụ
-        if np.allclose(result_icp.transformation, np.identity(4), atol=1e-6):
-            break
+    # Lấy trung bình theo số điểm trong mỗi tập
+    source_to_target /= len(source_points)
+    target_to_source /= len(target_points)
+    target_to_source = 0
 
-    # Áp dụng transformation cuối cùng
-    result = copy.deepcopy(source)
-    result.transform(current_transformation)
+    # Chamfer distance là tổng của hai khoảng cách trung bình
+    chamfer_dist = source_to_target + target_to_source
 
-    return result, current_transformation
+    return chamfer_dist
 
-def main(
-        src_file,
-        target_file,
-        is_src_npy=True,
-        is_target_npy=False,
-        visualize=True,
-        max_iter=100,
-        threshold=0.02
-):
-    src_pcd = load_point_cloud(src_file, is_npy=is_src_npy)
-    tar_pcd = load_point_cloud(target_file, is_npy=is_target_npy)
+if __name__ == '__main__':
+    # source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\ee127828-041a-483e-836b-662b26b9cadb\\normalized_model.npy"
+    source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\38691e1c-165f-4be6-949d-458c97911a66\\normalized_model.npy"
+    target_file = "D:\\private\\scenes\\d3e983b6-6b05-44b7-bc9c-97b3ee4e0e1b\\masked_cloud.ply"
 
-    source_normalized, src_centroid, src_maxdist = normalize_point_cloud(src_pcd)
-    target_normalized, target_centroid, target_maxdist = normalize_point_cloud(tar_pcd)
+    source_pcd = load_point_cloud(source_file, is_npy=True, is_src=True)
+    target_pcd = load_point_cloud(target_file, is_npy=False)
 
-    if not source_normalized.has_normals():
-        print("Đang tính normal cho source...")
-        source_normalized.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+    source_pcd, _, _ = normalize_point_cloud(source_pcd)
+    target_pcd, _, _ = normalize_point_cloud(target_pcd)
 
-    if not target_normalized.has_normals():
-        print("Đang tính normal cho target...")
-        target_normalized.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+    visualize_registration(source_pcd, target_pcd)
 
-    print("Đang thực hiện ICP...")
-    transformed_source, transform_matrix, fitness, inlier_rmse = icp_with_normal_init(
-        source_normalized, target_normalized, max_iter=max_iter, threshold=threshold)
+    source_pcd, _ = pca_alignment(source_pcd, target_pcd)
 
-    transformed_source, transform_matrix = custom_robust_registration(
-        transformed_source, target_normalized, max_iter=50, threshold=threshold)
+    source_npy = source_pcd.points
+    target_npy = target_pcd.points
 
-    print(f"ICP hoàn thành với fitness: {fitness:.4f}, inlier RMSE: {inlier_rmse:.4f}")
 
-    # Hiển thị kết quả đăng ký
-    if visualize:
-        print("Kết quả đăng ký:")
-        visualize_registration(source_normalized, target_normalized, transformed_source)
+    # Create point cloud objects
+    source_pcdd = PointCloud(source_npy, columns=["x", "y", "z"])
+    target_pcdd = PointCloud(target_npy, columns=["x", "y", "z"])
 
-    print("Đang đánh giá kết quả đăng ký...")
-    metrics = evaluate_registration(source_normalized, target_normalized, transformed_source, threshold)
+    icp = SimpleICP()
+    icp.add_point_clouds(target_pcdd, source_pcdd)
+    H, source_pcd_transformed, rigid_body_transformation_params, distance_residuals = icp.run(max_overlap_distance=1)
 
-    print(metrics)
+    print(source_pcd_transformed.shape)
 
-if __name__ == "__main__":
-    source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\a63e6333-b3b8-4487-b3ae-7c8c5e3092e8\\normalized_model.npy"
-    target_file = "D:\\private\\scenes\\08df38e7-b9ec-40d1-8652-b1857959a6c7\\masked_cloud.ply"
+    transformed_pcd = o3d.geometry.PointCloud()
+    transformed_pcd.points = o3d.utility.Vector3dVector(source_pcd_transformed)
 
-    main(
-        source_file,
-        target_file,
-        max_iter=10000,
-        threshold=0.02
-    )
+    visualize_registration(source_pcd, target_pcd, transformed_pcd)
+
+    chamfer_dist = chamfer_distance(source_pcd, target_pcd)
+    print(f"Chamfer Distance: {chamfer_dist}")
+
+    # target_dir = "D:\\private\\scenes"
+    # source_dir = "D:\\private\\objects_dataset_npy_10000\\objects\\"
+    #
+    # output_dict = {}
+    #
+    # for target_file in os.listdir(target_dir):
+    #     target_path = os.path.join(target_dir, target_file)
+    #     target_point_cloud_path = os.path.join(target_path, "masked_cloud.ply")
+    #     target_pcd = load_point_cloud(target_point_cloud_path)
+    #     target_pcd, _, _ = normalize_point_cloud(target_pcd)
+    #     target_pcd_npy = target_pcd.points
+    #     target_pcd_icp = PointCloud(target_pcd_npy, columns=["x", "y", "z"])
+    #     output_dict[target_file] = {}
+    #
+    #     for source_file in os.listdir(source_dir):
+    #         source_path = os.path.join(source_dir, source_file)
+    #         source_point_cloud_path = os.path.join(source_path, "normalized_model.npy")
+    #         source_pcd = load_point_cloud(source_point_cloud_path, is_npy=True, is_src=True)
+    #         source_pcd, _, _ = normalize_point_cloud(source_pcd)
+    #
+    #         source_pcd_aligned, _ = pca_alignment(source_pcd, target_pcd)
+    #         source_pcd_aligned_npy = source_pcd_aligned.points
+    #         source_pcd_aligned_icp = PointCloud(source_pcd_aligned_npy, columns=["x", "y", "z"])
+    #
+    #         icp = SimpleICP()
+    #         icp.add_point_clouds(target_pcd_icp, source_pcd_aligned_icp)
+    #
+    #         _, source_transformed, _, _ = icp.run(max_overlap_distance=1)
+    #
+    #         transformed_pcd = o3d.geometry.PointCloud()
+    #         transformed_pcd.points = o3d.utility.Vector3dVector(source_transformed)
+    #
+    #         chamfer_dist = chamfer_distance(transformed_pcd, target_pcd)
+    #
+    #         output_dict[target_file][source_file] = chamfer_dist
+    #
+    #         print(target_file, source_file, chamfer_dist)
+    #
+    # with open("../RetrievalSystem/distance_mapping.json", "w", encoding="utf-8") as f:
+    #     json.dump(output_dict, f, ensure_ascii=False, indent=4)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
