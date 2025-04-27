@@ -51,12 +51,12 @@ def visualize_registration(source, target, transformed_source=None):
     target_temp.paint_uniform_color([0, 1, 0])  # Green
 
     if transformed_source is None:
-        o3d.visualization.draw_geometries([source_temp, target_temp])
+        o3d.visualization.draw_geometries([target_temp])
     else:
         transformed_source_temp = copy.deepcopy(transformed_source)
         transformed_source_temp.paint_uniform_color([0, 0, 1])  # Blue
         coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1)
-        o3d.visualization.draw_geometries([target_temp, transformed_source_temp, coordinate_frame])
+        o3d.visualization.draw_geometries([target_temp])
 
 def pca_alignment(source, target):
     """
@@ -162,8 +162,8 @@ def chamfer_distance(source, target):
 
 if __name__ == '__main__':
     # source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\ee127828-041a-483e-836b-662b26b9cadb\\normalized_model.npy"
-    source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\38691e1c-165f-4be6-949d-458c97911a66\\normalized_model.npy"
-    target_file = "D:\\private\\scenes\\d3e983b6-6b05-44b7-bc9c-97b3ee4e0e1b\\masked_cloud.ply"
+    source_file = "D:\\private\\objects_dataset_npy_10000\\objects\\a63e6333-b3b8-4487-b3ae-7c8c5e3092e8\\normalized_model.npy"
+    target_file = "D:\\private\\scenes\\08df38e7-b9ec-40d1-8652-b1857959a6c7\\masked_cloud.ply"
 
     source_pcd = load_point_cloud(source_file, is_npy=True, is_src=True)
     target_pcd = load_point_cloud(target_file, is_npy=False)
@@ -194,7 +194,7 @@ if __name__ == '__main__':
 
     visualize_registration(source_pcd, target_pcd, transformed_pcd)
 
-    chamfer_dist = chamfer_distance(source_pcd, target_pcd)
+    chamfer_dist = chamfer_distance(transformed_pcd, target_pcd)
     print(f"Chamfer Distance: {chamfer_dist}")
 
     # target_dir = "D:\\private\\scenes"
