@@ -49,7 +49,7 @@ class OpenShapeInference:
 
         self.models_module = self._import_models(src_path)
 
-        print("Dang tai mo hinhf OpenShape")
+        print("=== Dang tai mo hinh OpenShape ===")
         self.config = self._load_config()
         self.model = self._load_model()
         self.model.eval()
