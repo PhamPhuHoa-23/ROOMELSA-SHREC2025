@@ -47,7 +47,3 @@ pip install -e .
 ## Usage
 
 See the individual component READMEs for specific usage instructions.
-
-## License
-
-[License information]
