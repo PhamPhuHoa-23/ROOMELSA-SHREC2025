@@ -27,9 +27,7 @@ class PanoFormerDepthEstimator:
 
         print(f"Using Device: {self.device}")
 
-        self.model = PanoFormerModel(
-            # img_size=512
-        )
+        self.model = PanoFormerModel()
         self.model.to(self.device)
         self.model.eval()
 

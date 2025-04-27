@@ -68,7 +68,7 @@ def query_collections():
     try:
         data = request.json
         vector_id = data.get("vector_id")
-        query_type = data.get("query_type", "combined")  # combined, image, shape
+        query_type = data.get("query_type", "combined")  # combined, 2d3d, image, shape
         k = data.get("k", 100)  # Số lượng kết quả trả về (mặc định 100 cho unique UUID)
         image_weight = data.get("image_weight", 0.5)  # Trọng số cho image_score
         shape_weight = data.get("shape_weight", 0.6)  # Trọng số cho shape_score
@@ -161,7 +161,95 @@ def query_collections():
 
                 results_list.append(item)
 
-        # Phương thức truy vấn: combined (kết hợp)
+        # Phương thức truy vấn: 2d3d (kết hợp 2D và 3D không có Geometric)
+        elif query_type == "2d3d":
+            # Truy vấn image_collection
+            image_results = client.search(
+                collection_name="image_collection",
+                query_vector=query_vector,
+                limit=k * 2,  # Lấy nhiều hơn để đảm bảo đủ k unique UUID
+                with_payload=True
+            )
+
+            # Lấy danh sách UUID duy nhất từ kết quả image
+            unique_uuids = {}
+            for result in image_results:
+                uuid = result.payload.get("uuid")
+                if uuid and uuid not in unique_uuids and len(unique_uuids) < k:
+                    unique_uuids[uuid] = {
+                        "uuid": uuid,
+                        "image_score": result.score,
+                        "shape_score": None,
+                        "combined_score": None,
+                        "image_path": result.payload.get("image_path"),
+                        "origin_path": result.payload.get("origin_path"),
+                        "image_data": None,
+                        "distance": distances.get(uuid, None)  # Thêm distance từ mapping
+                    }
+
+            # Truy vấn shape_collection cho từng UUID duy nhất
+            for uuid in unique_uuids.keys():
+                shape_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="uuid",
+                            match=models.MatchValue(value=uuid)
+                        )
+                    ]
+                )
+
+                shape_results = client.query_points(
+                    collection_name="shape_collection_tune2",
+                    query=query_vector,
+                    limit=1,  # Chỉ cần 1 kết quả cho mỗi UUID
+                    query_filter=shape_filter,
+                    with_payload=True
+                )
+
+                if shape_results.points:
+                    unique_uuids[uuid]["shape_score"] = shape_results.points[0].score
+                    # Cập nhật origin_path nếu không có trong image
+                    if not unique_uuids[uuid]["origin_path"]:
+                        unique_uuids[uuid]["origin_path"] = shape_results.points[0].payload.get("origin_path")
+
+            # Tính toán combined_score chỉ với trọng số 2D và 3D (không có Geometric)
+            for uuid, item in unique_uuids.items():
+                # Tính combined_score dựa trên trọng số
+                if item["image_score"] is not None and item["shape_score"] is not None:
+                    # Sử dụng weighted average đơn giản cho 2D và 3D
+                    total_weight = image_weight + shape_weight
+                    if total_weight > 0:
+                        item["combined_score"] = (
+                            (item["image_score"] * image_weight) +
+                            (item["shape_score"] * shape_weight)
+                        ) / total_weight
+                    else:
+                        item["combined_score"] = (item["image_score"] + item["shape_score"]) / 2
+                elif item["image_score"] is not None:
+                    item["combined_score"] = item["image_score"]
+                elif item["shape_score"] is not None:
+                    item["combined_score"] = item["shape_score"]
+                else:
+                    item["combined_score"] = 0
+
+                # Load ảnh gốc nếu có
+                try:
+                    origin_path = item["origin_path"]
+                    if origin_path and os.path.exists(origin_path):
+                        with open(origin_path, "rb") as img_file:
+                            item["image_data"] = base64.b64encode(img_file.read()).decode('utf-8')
+                    # Nếu không có origin_path, thử load từ path
+                    elif item["image_path"] and os.path.exists(item["image_path"]):
+                        with open(item["image_path"], "rb") as img_file:
+                            item["image_data"] = base64.b64encode(img_file.read()).decode('utf-8')
+                except Exception as e:
+                    print(f"Error loading image: {e}")
+                    # Continue without the image instead of raising an error
+
+            # Chuyển dict thành list
+            results_list = list(unique_uuids.values())
+
+        # Phương thức truy vấn: combined (kết hợp 2D + 3D + Geometric)
         else:  # query_type == "combined"
             # Truy vấn image_collection
             image_results = client.search(
@@ -185,7 +273,6 @@ def query_collections():
                         "origin_path": result.payload.get("origin_path"),
                         "image_data": None,
                         "distance": distances.get(uuid, None)  # Thêm distance từ mapping
-                        # "distance": chamfer_to_score(distances.get(uuid, None))
                     }
 
             # Truy vấn shape_collection cho từng UUID duy nhất
@@ -224,10 +311,7 @@ def query_collections():
                         chamfer_dist=item["distance"],
                         w_img=image_weight,
                         w_shape=shape_weight,
-                        w_chamfer=chamfer_weight,
-                        formula_type="harmonic_blend"
-                        # formula_type="adaptive_weight"
-                        # formula_type="confidence_boost"
+                        w_chamfer=chamfer_weight
                     )
                 elif item["image_score"] is not None:
                     item["combined_score"] = item["image_score"]
@@ -254,7 +338,7 @@ def query_collections():
             results_list = list(unique_uuids.values())
 
         # Sắp xếp kết quả theo score
-        if query_type == "combined":
+        if query_type in ["combined", "2d3d"]:
             results_list.sort(key=lambda x: x["combined_score"] if x["combined_score"] is not None else 0, reverse=True)
         else:
             results_list.sort(key=lambda x: x["score"] if x["score"] is not None else 0, reverse=True)
@@ -347,8 +431,8 @@ def export_all_csv():
         # Thông số truy vấn mặc định
         query_type = "combined"
         image_weight = 0.5
-        shape_weight = 0.6
-        chamfer_weight = 0.4
+        shape_weight = 0.7
+        chamfer_weight = 0.0
         k = 100
 
         # Đếm tổng số query points để hiển thị tiến trình
@@ -425,7 +509,6 @@ def export_all_csv():
                             w_img=image_weight,
                             w_shape=shape_weight,
                             w_chamfer=chamfer_weight,
-                            formula_type="harmonic_blend"
                         )
                     elif item["image_score"] is not None:
                         item["combined_score"] = item["image_score"]

@@ -7,8 +7,8 @@ import time
 import gc
 
 # Import our custom classes
-from Object3DDataset import Object3DDataset
-from MultiViewRenderer import MultiViewRenderer
+from Render.Object3DDataset import Object3DDataset
+from Render.MultiViewRenderer import MultiViewRenderer
 
 
 def parse_args():
