@@ -1,0 +1,61 @@
+project_name: Custom_3D_CLIP
+use_wandb: False
+clip_embed_dim: 1280
+clip_embed_version: OpenCLIP
+model:
+  name: PointBERT
+  scaling: 4
+  use_dense: False
+  in_channel: 6
+  out_channel: ${clip_embed_dim}
+  embedding_channel: 1024
+  voxel_size: 0.02
+
+training:
+  use_openclip_optimizer_scheduler: False
+  lr: 0.0005
+  lr_decay_step: 10000
+  lr_decay_rate: 0.967
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-8
+  warmup: 10000
+  max_epoch: 149
+  log_freq: 10
+  save_freq: 10
+  lambda_img_contras: 0  # Thay đổi thành use_img_contras: False
+  lambda_text_contras: 1  # Thay đổi thành use_text_contras: True
+  use_img_contras: False  # Thêm dòng này
+  use_text_contras: True  # Thêm dòng này
+  use_image_proj: False
+  use_text_proj: False
+  logit_scale_init: 14.28
+  use_mask: False
+
+dataset:
+  name: Custom
+  num_workers: 6
+  train_batch_size: 32
+  y_up: True
+  normalize: True
+  random_z_rotate: True
+  use_color: True
+  rgb_random_drop_prob: 0.5
+  augment: True
+
+custom_dataset:
+  # Cách 1: Dùng file danh sách cặp
+#  pair_list: "/path/to/pairs.txt"  # Mỗi dòng: /path/to/pc.npy /path/to/text_embed.npy
+
+  # Cách 2: Tự động tìm cặp từ hai thư mục
+  pc_dir: "/root/data_tuning/public_data_numpy_10000"
+  text_embed_dir: "/root/data_tuning/query_public_embed_"
+
+  num_points: 10000
+  y_up: True
+  normalize: True
+  random_z_rotate: False
+  use_color: True
+  train_batch_size: 64
+  num_workers: 6
+  augment: False

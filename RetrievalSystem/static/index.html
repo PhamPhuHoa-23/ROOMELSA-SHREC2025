@@ -236,7 +236,7 @@
             box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
         }
 
-        .apply-button {
+        .button {
             background-color: #3498db;
             color: white;
             border: none;
@@ -249,15 +249,53 @@
             margin-left: auto;
         }
 
-        .apply-button:hover {
+        .button:hover {
             background-color: #2980b9;
             transform: translateY(-1px);
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
 
-        .apply-button:active {
+        .button:active {
             transform: translateY(0);
             box-shadow: none;
+        }
+
+        .csv-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+
+        .csv-button {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .csv-button:hover {
+            background-color: #219653;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .csv-button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        .csv-button svg {
+            width: 16px;
+            height: 16px;
         }
 
         .results-container {
@@ -313,12 +351,6 @@
             margin: 0 auto;
         }
 
-        .image-container h4 {
-            margin-bottom: 10px;
-            color: #2c3e50;
-            text-align: center;
-        }
-
         .image-container img {
             max-width: 100%;
             height: auto;
@@ -366,6 +398,12 @@
             margin-top: 10px;
         }
 
+        /* Thêm màu sắc cho distance */
+        .distance-score {
+            background-color: #f0fff0 !important;
+            border-left: 3px solid #4CAF50;
+        }
+
         @media (max-width: 1200px) {
             main {
                 flex-direction: column;
@@ -381,10 +419,14 @@
                 align-items: flex-start;
             }
 
-            .apply-button {
+            .button {
                 margin-left: 0;
                 width: 100%;
                 margin-top: 10px;
+            }
+
+            .csv-buttons {
+                flex-direction: column;
             }
         }
     </style>
@@ -398,15 +440,25 @@
         <main>
             <div class="visualization-container">
                 <h2>Text Collection Points</h2>
-                <p>Click on a point to query related images and shapes</p>
-                <svg id="visualization"></svg>
-                <div id="error-message" class="error" style="display: none;"></div>
+                <p>Click on a query text to search related items</p>
+                <div class="csv-buttons">
+                    <a href="/export_all_csv" class="csv-button" download>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Tải xuống tất cả query UUIDs (CSV)
+                    </a>
+                </div>
+                <!-- Text boxes will be added here by JavaScript -->
             </div>
 
             <div id="query-container" class="query-container">
                 <h2>Query Results</h2>
                 <div id="query-text" class="query-text">
                     <strong>Query Text:</strong> <span id="selected-query"></span>
+                    <div id="query-uuid" style="font-size: 0.9em; margin-top: 5px;"></div>
                 </div>
 
                 <div class="query-options">
@@ -424,10 +476,24 @@
                         <input type="number" id="image-weight" min="0" max="1" step="0.1" value="0.5">
 
                         <label for="shape-weight">Trọng số 3D:</label>
-                        <input type="number" id="shape-weight" min="0" max="1" step="0.1" value="0.5">
+                        <input type="number" id="shape-weight" min="0" max="1" step="0.1" value="0.6">
+
+                        <label for="chamfer-weight">Trọng số Chamfer:</label>
+                        <input type="number" id="chamfer-weight" min="0" max="1" step="0.1" value="0.4">
                     </div>
 
-                    <button id="apply-query" class="apply-button">Áp dụng</button>
+                    <button id="apply-query" class="button">Áp dụng</button>
+                </div>
+
+                <div class="csv-buttons">
+                    <a href="/export_csv" class="csv-button" id="export-csv-button" download>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Tải xuống kết quả truy vấn (CSV)
+                    </a>
                 </div>
 
                 <div id="results-container" class="results-container">
@@ -446,17 +512,19 @@
         const API_URL = 'http://localhost:5000';
 
         // DOM Elements
-        const svgEl = document.getElementById('visualization');
+        const visualizationContainer = document.querySelector('.visualization-container');
         const queryContainer = document.getElementById('query-container');
         const selectedQueryEl = document.getElementById('selected-query');
+        const queryUuidEl = document.getElementById('query-uuid');
         const queryTypeSelect = document.getElementById('query-type-select');
         const imageWeightInput = document.getElementById('image-weight');
         const shapeWeightInput = document.getElementById('shape-weight');
+        const chamferWeightInput = document.getElementById('chamfer-weight');
         const applyQueryBtn = document.getElementById('apply-query');
         const weightControls = document.getElementById('weight-controls');
         const resultsContainer = document.getElementById('results-container');
         const loadingEl = document.getElementById('loading');
-        const errorMessageEl = document.getElementById('error-message');
+        const exportCsvButton = document.getElementById('export-csv-button');
 
         // Current selected vector ID
         let currentVectorId = null;
@@ -486,25 +554,26 @@
 
         // Show error message
         function showError(message) {
+            const errorMessageEl = document.createElement('div');
+            errorMessageEl.className = 'error';
             errorMessageEl.textContent = message;
-            errorMessageEl.style.display = 'block';
-        }
+            visualizationContainer.appendChild(errorMessageEl);
 
-        // Hide error message
-        function hideError() {
-            errorMessageEl.style.display = 'none';
+            // Automatically remove after 5 seconds
+            setTimeout(() => {
+                errorMessageEl.remove();
+            }, 5000);
         }
 
         // Fetch text points from API
         async function fetchTextPoints() {
             try {
                 showLoading();
-                hideError();
 
                 const response = await axios.get(`${API_URL}/get_text_points`);
 
                 if (response.data.status === 'success') {
-                    visualizePoints(response.data.points);
+                    visualizeTextBoxes(response.data.points);
                 } else {
                     showError('Failed to fetch text points');
                 }
@@ -520,7 +589,6 @@
         async function queryCollections(vectorId) {
             try {
                 showLoading();
-                hideError();
 
                 // Save current vector ID
                 currentVectorId = vectorId;
@@ -529,21 +597,32 @@
                 const queryType = queryTypeSelect.value;
                 const imageWeight = parseFloat(imageWeightInput.value);
                 const shapeWeight = parseFloat(shapeWeightInput.value);
+                const chamferWeight = parseFloat(chamferWeightInput.value);
 
                 const response = await axios.post(`${API_URL}/query_collections`, {
                     vector_id: vectorId,
                     query_type: queryType,
                     k: 100, // Number of unique UUIDs to return
                     image_weight: imageWeight,
-                    shape_weight: shapeWeight
+                    shape_weight: shapeWeight,
+                    chamfer_weight: chamferWeight
+
                 });
 
                 if (response.data.status === 'success') {
                     // Display the query container
                     queryContainer.style.display = 'block';
 
-                    // Set the query text
+                    // Set the query text and UUID
                     selectedQueryEl.textContent = response.data.query_text;
+
+                    // Show UUID if available
+                    if (response.data.query_uuid) {
+                        queryUuidEl.innerHTML = `<strong>UUID:</strong> ${response.data.query_uuid}`;
+                        queryUuidEl.style.display = 'block';
+                    } else {
+                        queryUuidEl.style.display = 'none';
+                    }
 
                     // Clear previous results
                     resultsContainer.innerHTML = '';
@@ -559,15 +638,19 @@
                             if (response.data.query_type === 'combined') {
                                 scoreHtml = `
                                     <div class="scores">
-                                        <p>Combined Score: <strong>${result.combined_score ? result.combined_score.toFixed(4) : 'N/A'}</strong></p>
-                                        <p>Image Score: ${result.image_score ? result.image_score.toFixed(4) : 'N/A'}</p>
-                                        <p>Shape Score: ${result.shape_score ? result.shape_score.toFixed(4) : 'N/A'}</p>
+                                        <p><strong>Combined Score:</strong> ${result.combined_score ? result.combined_score.toFixed(4) : 'N/A'}</p>
+                                        <p><strong>Image Score:</strong> ${result.image_score ? result.image_score.toFixed(4) : 'N/A'}</p>
+                                        <p><strong>Shape Score:</strong> ${result.shape_score ? result.shape_score.toFixed(4) : 'N/A'}</p>
+                                        ${result.distance !== null && result.distance !== undefined ?
+                                            `<p class="distance-score"><strong>Distance:</strong> ${result.distance.toFixed(4)}</p>` : ''}
                                     </div>
                                 `;
                             } else {
                                 scoreHtml = `
                                     <div class="scores">
-                                        <p>Score: <strong>${result.score ? result.score.toFixed(4) : 'N/A'}</strong></p>
+                                        <p><strong>Score:</strong> ${result.score ? result.score.toFixed(4) : 'N/A'}</p>
+                                        ${result.distance !== null && result.distance !== undefined ?
+                                            `<p class="distance-score"><strong>Distance:</strong> ${result.distance.toFixed(4)}</p>` : ''}
                                     </div>
                                 `;
                             }
@@ -577,9 +660,15 @@
                                 ${scoreHtml}
                                 <div class="image-container">
                                     ${result.image_data ? `
-                                        <img src="data:image/jpeg;base64,${result.image_data}" alt="Image ${result.uuid}">
+                                        <img src="data:image/png;base64,${result.image_data}" alt="Image ${result.uuid}">
                                         <p>Path: ${result.origin_path || result.image_path || 'N/A'}</p>
-                                    ` : '<p>No image available</p>'}
+                                    ` : `
+                                        <div style="width:200px; height:200px; background-color:#eee; display:flex;
+                                                    align-items:center; justify-content:center; border-radius:4px; margin: 0 auto;">
+                                            <p style="color:#666; text-align:center;">No image available</p>
+                                        </div>
+                                        <p>Path: ${result.origin_path || result.image_path || 'N/A'}</p>
+                                    `}
                                 </div>
                             `;
 
@@ -599,124 +688,30 @@
             }
         }
 
-        // Visualize text queries as boxes instead of points
-        function visualizePoints(points) {
-            // Remove SVG and replace with a div container for text boxes
-            d3.select(svgEl).remove();
-
+        // Visualize text queries as boxes
+        function visualizeTextBoxes(points) {
             // Create a div container for text boxes if it doesn't exist
             let textBoxContainer = document.getElementById('text-box-container');
             if (!textBoxContainer) {
                 textBoxContainer = document.createElement('div');
                 textBoxContainer.id = 'text-box-container';
-                textBoxContainer.style.cssText = `
-                    max-height: 600px;
-                    overflow-y: auto;
-                    padding: 10px;
-                    display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-                    gap: 15px;
-                `;
-                document.querySelector('.visualization-container').appendChild(textBoxContainer);
+                visualizationContainer.appendChild(textBoxContainer);
             } else {
                 textBoxContainer.innerHTML = ''; // Clear existing content
             }
 
-            // Sort points alphabetically by query for easier navigation
-            points.sort((a, b) => a.query.localeCompare(b.query));
-
-            // Create a text box for each point
-            points.forEach(point => {
-                const textBox = document.createElement('div');
-                textBox.className = 'text-query-box';
-                textBox.style.cssText = `
-                    background-color: #f0f8ff;
-                    border: 1px solid #b0c4de;
-                    border-radius: 6px;
-                    padding: 12px;
-                    cursor: pointer;
-                    transition: all 0.2s ease;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                    height: 100%;
-                    display: flex;
-                    flex-direction: column;
-                `;
-
-                // Add query text
-                const queryText = document.createElement('p');
-                queryText.style.cssText = `
-                    margin: 0 0 8px 0;
-                    font-size: 14px;
-                    color: #333;
-                    font-weight: bold;
-                    overflow-wrap: break-word;
-                    flex-grow: 1;
-                `;
-                queryText.textContent = point.query;
-                textBox.appendChild(queryText);
-
-                // Add ID as small text
-                const idText = document.createElement('small');
-                idText.style.cssText = `
-                    font-size: 11px;
-                    color: #777;
-                    margin-top: auto;
-                `;
-                idText.textContent = `ID: ${point.id}`;
-                textBox.appendChild(idText);
-
-                // Add hover effect
-                textBox.addEventListener('mouseover', () => {
-                    textBox.style.backgroundColor = '#e6f2ff';
-                    textBox.style.boxShadow = '0 3px 6px rgba(0,0,0,0.15)';
-                });
-
-                textBox.addEventListener('mouseout', () => {
-                    textBox.style.backgroundColor = '#f0f8ff';
-                    textBox.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                });
-
-                // Add click event
-                textBox.addEventListener('click', () => {
-                    // Highlight selected box
-                    document.querySelectorAll('.text-query-box').forEach(box => {
-                        box.style.backgroundColor = '#f0f8ff';
-                        box.style.borderColor = '#b0c4de';
-                    });
-                    textBox.style.backgroundColor = '#e1f5fe';
-                    textBox.style.borderColor = '#4fc3f7';
-
-                    // Query collections
-                    queryCollections(point.id);
-                });
-
-                textBoxContainer.appendChild(textBox);
-            });
-
             // Add search functionality
             const searchContainer = document.createElement('div');
-            searchContainer.style.cssText = `
-                margin-bottom: 15px;
-                display: flex;
-                align-items: center;
-            `;
+            searchContainer.className = 'search-container';
 
             const searchLabel = document.createElement('label');
             searchLabel.textContent = 'Tìm kiếm: ';
-            searchLabel.style.marginRight = '10px';
             searchLabel.htmlFor = 'search-query';
 
             const searchInput = document.createElement('input');
             searchInput.type = 'text';
             searchInput.id = 'search-query';
             searchInput.placeholder = 'Nhập từ khóa...';
-            searchInput.style.cssText = `
-                flex-grow: 1;
-                padding: 8px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                font-size: 14px;
-            `;
 
             searchInput.addEventListener('input', () => {
                 const searchTerm = searchInput.value.toLowerCase();
@@ -735,8 +730,45 @@
             searchContainer.appendChild(searchLabel);
             searchContainer.appendChild(searchInput);
 
-            // Insert search fbefore the text box container
-            textBoxContainer.parentNode.insertBefore(searchContainer, textBoxContainer);
+            // Insert search before the text box container
+            visualizationContainer.insertBefore(searchContainer, textBoxContainer);
+
+            // Sort points alphabetically by query for easier navigation
+            points.sort((a, b) => a.query.localeCompare(b.query));
+
+            // Create a text box for each point
+            points.forEach(point => {
+                const textBox = document.createElement('div');
+                textBox.className = 'text-query-box';
+
+                // Add query text
+                const queryText = document.createElement('p');
+                queryText.textContent = point.query;
+                textBox.appendChild(queryText);
+
+                // Add ID and UUID as small text
+                const idText = document.createElement('small');
+                if (point.uuid) {
+                    idText.textContent = `ID: ${point.id} | UUID: ${point.uuid}`;
+                } else {
+                    idText.textContent = `ID: ${point.id}`;
+                }
+                textBox.appendChild(idText);
+
+                // Add click event
+                textBox.addEventListener('click', () => {
+                    // Highlight selected box
+                    document.querySelectorAll('.text-query-box').forEach(box => {
+                        box.classList.remove('selected');
+                    });
+                    textBox.classList.add('selected');
+
+                    // Query collections
+                    queryCollections(point.id);
+                });
+
+                textBoxContainer.appendChild(textBox);
+            });
         }
 
         // Initialize: fetch text points when page loads
