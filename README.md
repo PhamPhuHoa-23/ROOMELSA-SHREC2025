@@ -29,7 +29,9 @@ We employ a deep learning model from the OpenShape project to learn a joint embe
 
 - **Model Architecture**: The system uses a point cloud-based encoder, such as PointBERT or PointNeXt, to transform a 3D point cloud $P$ into a high-dimensional feature vector $v_P \in \mathbb{R}^d$. Simultaneously, a pre-trained text encoder (from OpenCLIP) is used to convert a text query $T$ into a feature vector $v_T \in \mathbb{R}^d$ of the same dimension.
 
-- **Training**: The model is trained using a contrastive learning approach. Given a set of $N$ pairs of point clouds and their corresponding text descriptions $\{(P_i, T_i)\}_{i=1}^N$, the objective is to minimize the contrastive loss. The similarity between a point cloud $P_i$ and a text query $T_j$ is measured by the cosine similarity of their embeddings, $s(i, j) = \frac{v_{P_i} \cdot v_{T_j}}{\|v_{P_i}\| \|v_{T_j}\|}$.
+- **Training**: The model is trained using a contrastive learning approach. Given a set of $N$ pairs of point clouds and their corresponding text descriptions $\{(P_i, T_i)\}_{i=1}^N$, the objective is to minimize the contrastive loss. The similarity between a point cloud $P_i$ and a text query $T_j$ is measured by the cosine similarity of their embeddings:
+
+$$s(i, j) = \frac{v_{P_i} \cdot v_{T_j}}{\|v_{P_i}\| \|v_{T_j}\|}$$
 
 The training objective is to maximize the similarity of corresponding pairs $(P_i, T_i)$ while minimizing the similarity of non-corresponding pairs. This is achieved using the InfoNCE loss, which is a form of cross-entropy loss. For a given point cloud $P_i$, the loss is:
 
