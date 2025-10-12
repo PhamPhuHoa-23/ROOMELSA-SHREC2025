@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: roomelsa-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - roomelsa-network
+
+  # Main application container
+  roomelsa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: roomelsa-app
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./pretrained:/workspace/pretrained
+      - ./output:/workspace/output
+    depends_on:
+      - qdrant
+    networks:
+      - roomelsa-network
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+networks:
+  roomelsa-network:
+    driver: bridge
+
+volumes:
+  qdrant_storage:

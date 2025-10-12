@@ -4,7 +4,13 @@ A 3D object retrieval system for room elements and shapes, designed for the SHRE
 
 ## Overview
 
-This project, ROOMELSA-SHREC2025, is a comprehensive 3D object retrieval system designed for the SHREC 2025 challenge. The primary goal is to retrieve relevant 3D models of room elements and furniture from a large database based on natural language text queries. The system provides an end-to-end solution, from data processing and feature extraction to a web-based interface for interactive retrieval and visualization.
+This project is a comprehensive 3D object retrieval system designed for the SHREC 2025 challenge. The primary goal is to retrieve relevant 3D models of room elements and furniture from a large database based on natural language text queries.
+
+<p align="center">
+  <img src="Image/Introduction.png" width="700" />
+</p>
+
+The system provides an end-to-end solution, from data processing and feature extraction to a web-based interface for interactive retrieval and visualization.
 
 ## Methodology
 
@@ -61,54 +67,120 @@ $$\text{Score} = w_1 \cdot \text{sim}_{\text{cosine}}(v_T, v_P) + w_2 \cdot f(d_
 
 where $P_T$ is the point cloud of the query shape (if applicable) and $P_P$ is the point cloud of the retrieved shape, and $f(\cdot)$ is a function that converts the Chamfer distance to a similarity score.
 
+## Leaderboard
+
+Here is the performance of our team (Ai-Yahh) in comparison to others on the SHREC 2025 challenge leaderboard.
+
+| Team Name             | R@1      | R@5      | R@10     | MRR      |
+| --------------------- | -------- | -------- | -------- | -------- |
+| Stubborn_Strawberries | 0.94     | 1.00     | 1.00     | 0.97     |
+| **Ai-Yahh**           | **0.92** | **1.00** | **1.00** | **0.96** |
+| MealsRetrieval        | 0.92     | 1.00     | 1.00     | 0.96     |
+| BUCCI_GANG            | 0.90     | 1.00     | 1.00     | 0.95     |
+| NoResources           | 0.88     | 1.00     | 1.00     | 0.93     |
+
 ## How to Run the Project
 
 ### 1. Setup Environment
 
-```bash
-# Create conda environment
-conda create -n roomelsa python=3.9
-conda activate roomelsa
+#### Prerequisites
 
-# Core dependencies
-conda install pytorch=1.13.0 torchvision pytorch-cuda=11.6 -c pytorch -c nvidia
-conda install -c iopath iopath
-conda install numpy scipy matplotlib pandas scikit-learn -c conda-forge
-pip install open3d omegaconf
-pip install flask flask-cors qdrant-client
-pip install pillow tqdm open-clip-torch huggingface_hub sympy simpleicp
-pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
-cd OpenShape_code
-pip install -e .
+- [Docker](https://docs.docker.com/get-docker/) (version 20.10 or higher)
+- [Docker Compose](https://docs.docker.com/compose/install/) (version 1.29 or higher)
+- [NVIDIA Docker Runtime](https://github.com/NVIDIA/nvidia-docker) (for GPU support)
+
+#### Build and Start Services
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd ROOMELSA-SHREC2025
+
+# Build the Docker image
+docker-compose build
+
+# Start all services (Qdrant + ROOMELSA)
+docker-compose up -d
+
+# Access the container shell
+docker-compose exec roomelsa bash
+
+# Inside the container, activate the conda environment
+source activate roomelsa
+```
+
+The Docker setup includes:
+
+- **ROOMELSA container**: All dependencies for rendering, training, and inference
+- **Qdrant container**: Vector database for retrieval system
+- **Persistent volumes**: For data, pretrained models, and outputs
+- **GPU support**: Automatic GPU access via NVIDIA Docker runtime
+
+#### Verify Installation
+
+```bash
+# Check if PyTorch detects GPU
+docker-compose exec roomelsa bash -c "source activate roomelsa && python -c 'import torch; print(torch.cuda.is_available())'"
+
+# Check Qdrant status
+curl http://localhost:6333/
 ```
 
 ### 2. Data Preparation
 
-1.  Organize your 3D models in a directory.
+All commands should be executed inside the Docker container:
+
+```bash
+# Access the container
+docker-compose exec roomelsa bash
+source activate roomelsa
+```
+
+1.  Organize your 3D models in the `data/` directory (automatically mounted in the container).
 2.  Use the `Render/Object.ipynb` notebook to create a JSON file that catalogs your dataset.
-3.  Run the `Render/main.py` script to perform multi-view rendering of the 3D models. This will generate images and depth maps.
-4.  Convert the rendered outputs to point clouds. You can use the `ObjectToNpy.py` script for this.
+3.  Run the `Render/main.py` script to perform multi-view rendering of the 3D models:
+    ```bash
+    python Render/main.py --data_root ./data --json_path ./data/object.json --output_dir ./output
+    ```
+4.  Convert the rendered outputs to point clouds using the `ObjectToNpy.py` script:
+    ```bash
+    python ObjectToNpy.py --input_dir ./output --output_dir ./data/point_clouds
+    ```
 
 ### 3. Training (Fine-tuning OpenShape)
 
 1.  Prepare your dataset of point clouds and corresponding text embeddings as described in `OpenShape_code/OUR_GUIDELINE.md`.
 2.  Configure your training in `OpenShape_code/src/configs/custom_train.yaml`.
-3.  Start training by running:
+3.  Start training by running (inside the Docker container):
     ```bash
     python OpenShape_code/src/main.py --config OpenShape_code/src/configs/custom_train.yaml
     ```
 
 ### 4. Indexing Data in Qdrant
 
-1.  Set up and run a Qdrant instance (Docker is recommended).
-2.  Use the `OpenShapeInference.py` script to extract features for all your 3D models.
-3.  Use the `RetrievalSystem/Qdrant.ipynb` notebook to create collections in Qdrant and upload the extracted feature vectors.
+The Qdrant service is automatically started via Docker Compose and accessible at `http://qdrant:6333` (inside container) or `http://localhost:6333` (from host).
+
+1.  Extract features for all your 3D models (inside the Docker container):
+    ```bash
+    python OpenShapeInference.py --model_path ./pretrained/model.pt --input_dir ./data/point_clouds --output_dir ./output/features
+    ```
+2.  Use the `RetrievalSystem/Qdrant.ipynb` notebook to create collections in Qdrant and upload the extracted feature vectors.
 
 ### 5. Running the Retrieval System
 
-1.  Start the Flask server:
+1.  Start the Flask server (inside the Docker container):
     ```bash
     cd RetrievalSystem
     python app.py
     ```
-2.  Open your web browser and navigate to `http://localhost:5000` (or the configured port) to use the retrieval system.
+2.  Open your web browser and navigate to `http://localhost:5000` to use the retrieval system.
+
+### 6. Stopping Services
+
+```bash
+# Stop all services
+docker-compose down
+
+# Stop and remove all data (including volumes)
+docker-compose down -v
+```
