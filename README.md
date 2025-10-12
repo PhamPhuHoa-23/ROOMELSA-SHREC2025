@@ -21,17 +21,17 @@ The methodology is divided into three main stages: Data Preparation, Feature Ext
 
 We employ a deep learning model from the OpenShape project to learn a joint embedding space for 3D shapes and text.
 
-- **Model Architecture**: The system uses a point cloud-based encoder, such as PointBERT or PointNeXt, to transform a 3D point cloud \\(P\\) into a high-dimensional feature vector \\(v_P \in \mathbb{R}^d\\). Simultaneously, a pre-trained text encoder (from OpenCLIP) is used to convert a text query \\(T\\) into a feature vector \\(v_T \in \mathbb{R}^d\\) of the same dimension.
+- **Model Architecture**: The system uses a point cloud-based encoder, such as PointBERT or PointNeXt, to transform a 3D point cloud $P$ into a high-dimensional feature vector $v_P \in \mathbb{R}^d$. Simultaneously, a pre-trained text encoder (from OpenCLIP) is used to convert a text query $T$ into a feature vector $v_T \in \mathbb{R}^d$ of the same dimension.
 
-- **Training**: The model is trained using a contrastive learning approach. Given a set of \\(N\\) pairs of point clouds and their corresponding text descriptions \\(\\{(P*i, T_i)\\}*{i=1}^N\\), the objective is to minimize the contrastive loss. The similarity between a point cloud \\(P*i\\) and a text query \\(T_j\\) is measured by the cosine similarity of their embeddings, \\(s(i, j) = \frac{v*{P*i} \cdot v*{T*j}}{\\|v*{P*i}\\| \\|v*{T_j}\|}\\).
+- **Training**: The model is trained using a contrastive learning approach. Given a set of $N$ pairs of point clouds and their corresponding text descriptions $\{(P_i, T_i)\}_{i=1}^N$, the objective is to minimize the contrastive loss. The similarity between a point cloud $P_i$ and a text query $T_j$ is measured by the cosine similarity of their embeddings, $s(i, j) = \frac{v_{P_i} \cdot v_{T_j}}{\|v_{P_i}\| \|v_{T_j}\|}$.
 
-The training objective is to maximize the similarity of corresponding pairs \\((P_i, T_i)\\) while minimizing the similarity of non-corresponding pairs. This is achieved using the InfoNCE loss, which is a form of cross-entropy loss. For a given point cloud \\(P_i\\), the loss is:
+The training objective is to maximize the similarity of corresponding pairs $(P_i, T_i)$ while minimizing the similarity of non-corresponding pairs. This is achieved using the InfoNCE loss, which is a form of cross-entropy loss. For a given point cloud $P_i$, the loss is:
 
-\\[ \mathcal{L}_{P_i} = -\log \frac{\exp(s(i, i) / \tau)}{\sum_{j=1}^N \exp(s(i, j) / \tau)} \\]
+$$\mathcal{L}_{P_i} = -\log \frac{\exp(s(i, i) / \tau)}{\sum_{j=1}^N \exp(s(i, j) / \tau)}$$
 
-where \\(\tau\\) is a temperature parameter that controls the sharpness of the distribution. A symmetric loss is calculated for the text query \\(T_i\\), and the total loss is the average of the two:
+where $\tau$ is a temperature parameter that controls the sharpness of the distribution. A symmetric loss is calculated for the text query $T_i$, and the total loss is the average of the two:
 
-\\[ \mathcal{L}_{\text{total}} = \frac{1}{2N} \sum_{i=1}^N (\mathcal{L}_{P_i} + \mathcal{L}_{T_i}) \\]
+$$\mathcal{L}_{\text{total}} = \frac{1}{2N} \sum_{i=1}^N (\mathcal{L}_{P_i} + \mathcal{L}_{T_i})$$
 
 ### 3. Retrieval
 
@@ -49,17 +49,17 @@ The performance of the retrieval system is evaluated using a combination of simi
 
 - **Cosine Similarity**: The primary metric for retrieval is the cosine similarity between the query text embedding and the 3D shape embedding in the learned joint feature space.
 
-- **Chamfer Distance**: For more fine-grained shape similarity assessment, we use the Chamfer Distance. It measures the distance between two point clouds, \\(P_1\\) and \\(P_2\\), and is defined as:
+- **Chamfer Distance**: For more fine-grained shape similarity assessment, we use the Chamfer Distance. It measures the distance between two point clouds, $P_1$ and $P_2$, and is defined as:
 
-\\[ d_{CD}(P_1, P_2) = \frac{1}{|P_1|} \sum_{x \in P_1} \min_{y \in P_2} \\|x - y\\|_2^2 + \frac{1}{|P_2|} \sum_{y \in P_2} \min_{x \in P_1} \\|x - y\\|_2^2 \\]
+$$d_{CD}(P_1, P_2) = \frac{1}{|P_1|} \sum_{x \in P_1} \min_{y \in P_2} \|x - y\|_2^2 + \frac{1}{|P_2|} \sum_{y \in P_2} \min_{x \in P_1} \|x - y\|_2^2$$
 
 To improve the accuracy of the Chamfer Distance, point clouds are first aligned using Principal Component Analysis (PCA) and the Iterative Closest Point (ICP) algorithm.
 
 - **Combined Score**: The final ranking score is a weighted sum of the cosine similarity and a score derived from the Chamfer distance. The `advanced_scoring` function in `RetrievalSystem/score/calculate_score.py` implements this logic:
 
-\\[ \text{Score} = w_1 \cdot \text{sim}_{\text{cosine}}(v_T, v_P) + w_2 \cdot f(d_{CD}(P_T, P_P)) \\]
+$$\text{Score} = w_1 \cdot \text{sim}_{\text{cosine}}(v_T, v_P) + w_2 \cdot f(d_{CD}(P_T, P_P))$$
 
-where \\(P_T\\) is the point cloud of the query shape (if applicable) and \\(P_P\\) is the point cloud of the retrieved shape, and \\(f(\cdot)\\) is a function that converts the Chamfer distance to a similarity score.
+where $P_T$ is the point cloud of the query shape (if applicable) and $P_P$ is the point cloud of the retrieved shape, and $f(\cdot)$ is a function that converts the Chamfer distance to a similarity score.
 
 ## How to Run the Project
 
